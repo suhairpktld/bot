@@ -1,0 +1,64 @@
+//@version=5
+indicator(title="Range Filter - Day Trading Edition", shorttitle="RF Day Pro", overlay=true, precision=2)
+
+// ===== Inputs =====
+// Core Parameters
+per         = input.int(100,   "Sampling Period", minval=10, maxval=200, group="Strategy Settings")
+mult        = input.float(3.0, "Range Multiplier", minval=1.5, maxval=5.0, step=0.1, group="Strategy Settings")
+src         = input(ohlc4,     "Source", group="Strategy Settings")
+
+// Confluence Filters
+useEMA      = input(true,      "Enable 200 EMA Filter?", group="Confluence")
+useRSI      = input(true,      "Enable RSI Filter?", group="Confluence")
+rsiLength   = input(14,        "RSI Length", minval=5, group="Confluence")
+
+// ===== Calculations =====
+// Range Filter Core
+smrng(x, t, m) =>
+    wper = t * 2 - 1
+    avrng = ta.ema(math.abs(x - x[1]), t)
+    smoothrng = ta.ema(avrng, wper) * m
+    smoothrng
+rng = smrng(src, per, mult)
+
+filt = 0.0
+filt := src > nz(filt[1]) ? math.max(nz(filt[1]), src - rng) : 
+       src < nz(filt[1]) ? math.min(nz(filt[1]), src + rng) : nz(filt[1])
+
+// Trend Direction
+upward   = ta.change(filt) > 0 ? nz(upward[1]) + 1 : 0
+downward = ta.change(filt) < 0 ? nz(downward[1]) + 1 : 0
+
+// Confluence Indicators
+ema200    = ta.ema(close, 200)
+rsi       = ta.rsi(close, rsiLength)
+rsiBull   = useRSI ? rsi >= 50 : true
+rsiBear   = useRSI ? rsi <= 50 : true
+emaBull   = useEMA ? close >= ema200 : true
+emaBear   = useEMA ? close <= ema200 : true
+
+// ===== Signals =====
+buySignal  = close > filt and upward >= 2 and rsiBull and emaBull
+sellSignal = close < filt and downward >= 2 and rsiBear and emaBear
+
+// ===== Alerts =====
+alertcondition(buySignal,  "BUY: Price Above Filter + Uptrend",  "Range Filter Buy Alert")
+alertcondition(sellSignal, "SELL: Price Below Filter + Downtrend", "Range Filter Sell Alert")
+
+// ===== Visuals =====
+// Colors
+filterColor = upward >= 2 ? color.new(color.green, 0) : 
+             downward >= 2 ? color.new(color.red, 0) : 
+             color.new(color.orange, 0)
+
+// Plots
+plot(filt, "Range Filter", filterColor, 2)
+plot(useEMA ? ema200 : na, "200 EMA", color.purple, 1)
+
+// Signal Arrows
+plotshape(buySignal,  title="Buy",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small)
+plotshape(sellSignal, title="Sell", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small)
+
+// Background
+bgcolor(buySignal  ? color.new(color.green, 90) : 
+        sellSignal ? color.new(color.red, 90) : na)
